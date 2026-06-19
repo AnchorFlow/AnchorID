@@ -1,0 +1,423 @@
+// AnchorID — Prisma schema
+// PostgreSQL data model for the identity & compliance layer.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Role {
+  USER
+  ANCHOR_ADMIN
+  ANCHOR_MEMBER
+  ADMIN
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+  DEACTIVATED
+}
+
+enum DocumentType {
+  PASSPORT
+  NATIONAL_ID
+  DRIVERS_LICENSE
+  PROOF_OF_ADDRESS
+}
+
+enum DocumentStatus {
+  PENDING
+  IN_REVIEW
+  APPROVED
+  REJECTED
+}
+
+enum VerificationStatus {
+  PENDING
+  IN_REVIEW
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+enum VerificationLevel {
+  BASIC
+  STANDARD
+  ENHANCED
+}
+
+enum ConsentStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
+enum AccessRequestStatus {
+  PENDING
+  APPROVED
+  DENIED
+  EXPIRED
+  REVOKED
+}
+
+enum AnchorStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum AuditAction {
+  USER_REGISTERED
+  LOGIN_SUCCESS
+  LOGIN_FAILED
+  TOKEN_REFRESHED
+  IDENTITY_CREATED
+  IDENTITY_UPDATED
+  DOCUMENT_UPLOADED
+  DOCUMENT_REVIEWED
+  VERIFICATION_UPDATED
+  CONSENT_GRANTED
+  CONSENT_REVOKED
+  CONSENT_EXPIRED
+  ACCESS_REQUEST_CREATED
+  ACCESS_REQUEST_APPROVED
+  ACCESS_REQUEST_DENIED
+  CREDENTIAL_ACCESSED
+  ANCHOR_REGISTERED
+  ANCHOR_APPROVED
+  ANCHOR_REJECTED
+  ANCHOR_SUSPENDED
+  ANCHOR_MEMBER_ADDED
+  ANCHOR_MEMBER_REMOVED
+  API_KEY_CREATED
+  API_KEY_REVOKED
+  ACCOUNT_SUSPENDED
+  ACCOUNT_REACTIVATED
+  ADMIN_ACTION
+}
+
+// ---------------------------------------------------------------------------
+// Core identity
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String        @id @default(uuid())
+  email         String?       @unique
+  role          Role          @default(USER)
+  status        AccountStatus @default(ACTIVE)
+
+  wallets           Wallet[]
+  identityProfile   IdentityProfile?
+  refreshTokens     RefreshToken[]
+  anchorMemberships AnchorMember[]
+  consents          Consent[]
+  auditLogs         AuditLog[]      @relation("AuditActor")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([role])
+  @@index([status])
+  @@map("users")
+}
+
+model Wallet {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stellarAddress  String   @unique
+  isPrimary       Boolean  @default(true)
+  verifiedAt      DateTime?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([userId])
+  @@map("wallets")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  replacedByTokenId String?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+// ---------------------------------------------------------------------------
+// Identity profile & documents
+// ---------------------------------------------------------------------------
+
+model IdentityProfile {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  firstName        String
+  lastName         String
+  dateOfBirth      DateTime
+  nationality      String
+  address          String
+  email            String
+  phoneNumber      String
+  governmentIdType String?
+  governmentIdNumber String
+
+  documents     Document[]
+  verifications Verification[]
+  credentials   Credential[]
+  consents      Consent[]
+  accessRequests AccessRequest[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([userId])
+  @@index([governmentIdNumber])
+  @@map("identity_profiles")
+}
+
+model Document {
+  id                String         @id @default(uuid())
+  identityProfileId String
+  identityProfile   IdentityProfile @relation(fields: [identityProfileId], references: [id], onDelete: Cascade)
+
+  type        DocumentType
+  status      DocumentStatus @default(PENDING)
+  storageKey  String
+  fileName    String
+  mimeType    String
+  sizeBytes   Int
+  checksum    String
+
+  reviewedById String?
+  reviewedAt   DateTime?
+  rejectionReason String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([identityProfileId])
+  @@index([type])
+  @@index([status])
+  @@map("documents")
+}
+
+model Verification {
+  id                String          @id @default(uuid())
+  identityProfileId String
+  identityProfile   IdentityProfile @relation(fields: [identityProfileId], references: [id], onDelete: Cascade)
+
+  status   VerificationStatus @default(PENDING)
+  level    VerificationLevel  @default(BASIC)
+  provider String             @default("manual_review")
+  notes    String?
+  reviewedById String?
+  reviewedAt   DateTime?
+  expiresAt    DateTime?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([identityProfileId])
+  @@index([status])
+  @@map("verifications")
+}
+
+// A Credential is a derived, shareable claim ("name_verified", "over_18",
+// "kyc_level") computed from an approved Verification. Anchors only ever
+// read Credentials (never raw documents), and only the subset their Consent
+// scope covers.
+model Credential {
+  id                String          @id @default(uuid())
+  identityProfileId String
+  identityProfile   IdentityProfile @relation(fields: [identityProfileId], references: [id], onDelete: Cascade)
+
+  type      String
+  value     Json
+  issuedAt  DateTime @default(now())
+  expiresAt DateTime?
+  revokedAt DateTime?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([identityProfileId])
+  @@index([type])
+  @@map("credentials")
+}
+
+// ---------------------------------------------------------------------------
+// Anchors
+// ---------------------------------------------------------------------------
+
+model AnchorOrganization {
+  id          String       @id @default(uuid())
+  name        String
+  legalName   String
+  website     String?
+  homeDomain  String       @unique
+  status      AnchorStatus @default(PENDING)
+  description String?
+
+  members        AnchorMember[]
+  apiCredentials AnchorApiCredential[]
+  accessRequests AccessRequest[]
+  consents       Consent[]
+
+  approvedById String?
+  approvedAt   DateTime?
+  rejectionReason String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([status])
+  @@map("anchor_organizations")
+}
+
+model AnchorMember {
+  id        String              @id @default(uuid())
+  anchorId  String
+  anchor    AnchorOrganization  @relation(fields: [anchorId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role                @default(ANCHOR_MEMBER)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@unique([anchorId, userId])
+  @@index([anchorId])
+  @@index([userId])
+  @@map("anchor_members")
+}
+
+model AnchorApiCredential {
+  id        String              @id @default(uuid())
+  anchorId  String
+  anchor    AnchorOrganization  @relation(fields: [anchorId], references: [id], onDelete: Cascade)
+
+  keyId      String   @unique
+  secretHash String
+  label      String?
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([anchorId])
+  @@map("anchor_api_credentials")
+}
+
+// ---------------------------------------------------------------------------
+// Consent & access
+// ---------------------------------------------------------------------------
+
+model Consent {
+  id                String              @id @default(uuid())
+  userId            String
+  user              User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  identityProfileId String
+  identityProfile   IdentityProfile     @relation(fields: [identityProfileId], references: [id], onDelete: Cascade)
+  anchorId          String
+  anchor            AnchorOrganization  @relation(fields: [anchorId], references: [id], onDelete: Cascade)
+
+  status     ConsentStatus @default(ACTIVE)
+  scopes     String[]
+  grantedAt  DateTime      @default(now())
+  expiresAt  DateTime?
+  revokedAt  DateTime?
+
+  accessRequestId String?  @unique
+  accessRequest   AccessRequest? @relation(fields: [accessRequestId], references: [id])
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([userId])
+  @@index([anchorId])
+  @@index([status])
+  @@map("consents")
+}
+
+model AccessRequest {
+  id                String              @id @default(uuid())
+  anchorId          String
+  anchor            AnchorOrganization  @relation(fields: [anchorId], references: [id], onDelete: Cascade)
+  identityProfileId String
+  identityProfile   IdentityProfile     @relation(fields: [identityProfileId], references: [id], onDelete: Cascade)
+
+  status      AccessRequestStatus @default(PENDING)
+  scopes      String[]
+  reason      String?
+  requestedExpiryDays Int @default(90)
+
+  resolvedAt DateTime?
+  consent    Consent?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([anchorId])
+  @@index([identityProfileId])
+  @@index([status])
+  @@map("access_requests")
+}
+
+// ---------------------------------------------------------------------------
+// Audit
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id     String  @id @default(uuid())
+  action AuditAction
+
+  actorId   String?
+  actor     User?   @relation("AuditActor", fields: [actorId], references: [id])
+  actorRole Role?
+
+  targetType String?
+  targetId   String?
+
+  metadata  Json?
+  ipAddress String?
+  userAgent String?
+
+  createdAt DateTime @default(now())
+
+  @@index([action])
+  @@index([actorId])
+  @@index([targetType, targetId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

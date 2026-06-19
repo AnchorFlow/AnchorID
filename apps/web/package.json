@@ -1,0 +1,32 @@
+{
+  "name": "@anchorid/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@anchorid/types": "*",
+    "@anchorid/ui": "*",
+    "@hookform/resolvers": "^5.4.0",
+    "@stellar/freighter-api": "^6.0.1",
+    "@stellar/stellar-sdk": "^12.3.0",
+    "next": "^15.5.19",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-hook-form": "^7.79.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.5.4"
+  }
+}

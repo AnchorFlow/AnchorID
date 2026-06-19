@@ -1,0 +1,26 @@
+{
+  "name": "anchorid",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AnchorID — open-source identity and compliance layer for the Stellar ecosystem.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run start:dev --workspace=@anchorid/api",
+    "dev:web": "npm run dev --workspace=@anchorid/web",
+    "build": "npm run build --workspace=@anchorid/types && npm run build --workspace=@anchorid/shared && npm run build --workspace=@anchorid/stellar && npm run build --workspace=@anchorid/ui && npm run build --workspace=@anchorid/api && npm run build --workspace=@anchorid/web",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "prisma:generate": "npm run prisma:generate --workspace=@anchorid/api",
+    "prisma:migrate": "npm run prisma:migrate --workspace=@anchorid/api",
+    "prisma:seed": "npm run prisma:seed --workspace=@anchorid/api"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
